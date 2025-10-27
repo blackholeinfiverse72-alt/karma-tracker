@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.v1.karma.main import router as karma_router
 from routes import balance, redeem, policy
 from routes.karma import router as karma_api_router  # New karma API router
+from routes.rnanubandhan import router as rnanubandhan_router  # Rnanubandhan API router
+from routes.agami import router as agami_router  # Agami Karma API router
 # from routes import user, admin  # These modules don't exist yet
 
 app = FastAPI(
@@ -30,6 +32,12 @@ app.include_router(karma_router, prefix="/v1")
 
 # Include the new karma API router
 app.include_router(karma_api_router, prefix="/api/v1")
+
+# Include Rnanubandhan API router
+app.include_router(rnanubandhan_router, tags=["Rnanubandhan API"])
+
+# Include Agami Karma API router
+app.include_router(agami_router, tags=["Agami Karma API"])
 
 # Include legacy routes (these will be migrated to versioned routes in future)
 app.include_router(balance.router, tags=["Wallet Operations"])

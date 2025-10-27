@@ -9,7 +9,9 @@
     "q_learning_optimizer",
     "unified_event_gateway",
     "file_upload_system",
-    "event_audit_trail"
+    "event_audit_trail",
+    "rnanubandhan_network",
+    "agami_karma_predictor"
   ],
   "interfaces": [
     "/v1/karma/log-action",
@@ -23,6 +25,17 @@
     "/v1/karma/stats/{user_id}",
     "/v1/karma/event",
     "/v1/karma/event/with-file",
+    "/api/v1/rnanubandhan/{user_id}",
+    "/api/v1/rnanubandhan/{user_id}/debts",
+    "/api/v1/rnanubandhan/{user_id}/credits",
+    "/api/v1/rnanubandhan/create-debt",
+    "/api/v1/rnanubandhan/repay-debt",
+    "/api/v1/rnanubandhan/transfer-debt",
+    "/api/v1/rnanubandhan/relationship/{relationship_id}",
+    "/api/v1/agami/predict",
+    "/api/v1/agami/user/{user_id}",
+    "/api/v1/agami/context-weights",
+    "/api/v1/agami/context-weights/{context_key}",
     "/health",
     "/metrics"
   ],
@@ -82,6 +95,40 @@
       "workflow_tests": "implemented",
       "multi_department_tests": "implemented",
       "automated_testing": "available"
+    },
+    "rnanubandhan_network": {
+      "status": "implemented",
+      "description": "Relational karma model linking users via debtor-receiver relationships",
+      "features": [
+        "Karmic debt tracking between users",
+        "Debt repayment and transfer mechanisms",
+        "Network visualization and analysis",
+        "Real-time relationship updates"
+      ],
+      "api_endpoints": [
+        "/api/v1/rnanubandhan/{user_id}",
+        "/api/v1/rnanubandhan/{user_id}/debts",
+        "/api/v1/rnanubandhan/{user_id}/credits",
+        "/api/v1/rnanubandhan/create-debt",
+        "/api/v1/rnanubandhan/repay-debt",
+        "/api/v1/rnanubandhan/transfer-debt"
+      ]
+    },
+    "agami_karma_predictor": {
+      "status": "implemented",
+      "description": "Future karma prediction using Q-learning weights and context-aware analysis",
+      "features": [
+        "AgamiKarma schema for queued karmic results",
+        "Q-learning based outcome predictions",
+        "Context-sensitive Purushartha weighting",
+        "Dynamic role progression modeling"
+      ],
+      "api_endpoints": [
+        "/api/v1/agami/predict",
+        "/api/v1/agami/user/{user_id}",
+        "/api/v1/agami/context-weights",
+        "/api/v1/agami/context-weights/{context_key}"
+      ]
     }
   },
   "departments": {

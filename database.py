@@ -12,6 +12,7 @@ appeals_col = db["appeals"]
 atonements_col = db["atonements"]
 death_events_col = db["death_events"]
 karma_events_col = db["karma_events"]  # New collection for unified events
+rnanubandhan_col = db["rnanubandhan_relationships"]  # Collection for Rnanubandhan relationships
 
 # Function to get database instance
 def get_db():

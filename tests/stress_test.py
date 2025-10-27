@@ -43,6 +43,10 @@ class KarmaStressTester:
         self.results = {
             "start_time": datetime.now().isoformat(),
             "total_requests": 0,
+
+
+
+            
             "successful_requests": 0,
             "failed_requests": 0,
             "response_times": [],

@@ -114,6 +114,116 @@ def test_invalid_user():
         print(f"Exception: {e}")
         return False
 
+def test_rnanubandhan_network():
+    """Test the GET /rnanubandhan/{user_id} endpoint"""
+    print("\nTesting GET /rnanubandhan/{user_id} endpoint...")
+    
+    # Test with a sample user ID
+    user_id = "test_user_001"
+    url = f"{BASE_URL}/rnanubandhan/{user_id}"
+    
+    try:
+        response = requests.get(url)
+        print(f"Status Code: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            print("Response:")
+            print(json.dumps(data, indent=2))
+            return True
+        else:
+            print(f"Error: {response.text}")
+            return False
+    except Exception as e:
+        print(f"Exception: {e}")
+        return False
+
+def test_create_rnanubandhan_debt():
+    """Test the POST /rnanubandhan/create-debt endpoint"""
+    print("\nTesting POST /rnanubandhan/create-debt endpoint...")
+    
+    url = f"{BASE_URL}/rnanubandhan/create-debt"
+    
+    # Test data
+    payload = {
+        "debtor_id": "test_user_001",
+        "receiver_id": "test_user_002",
+        "action_type": "help_action",
+        "severity": "minor",
+        "amount": 10.0,
+        "description": "Provided assistance with project"
+    }
+    
+    try:
+        response = requests.post(url, json=payload)
+        print(f"Status Code: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            print("Response:")
+            print(json.dumps(data, indent=2))
+            return True
+        else:
+            print(f"Error: {response.text}")
+            return False
+    except Exception as e:
+        print(f"Exception: {e}")
+        return False
+
+def test_agami_prediction():
+    """Test the POST /agami/predict endpoint"""
+    print("\nTesting POST /agami/predict endpoint...")
+    
+    url = f"{BASE_URL}/agami/predict"
+    
+    # Test data
+    payload = {
+        "user_id": "test_user_001",
+        "scenario": {
+            "context": {
+                "environment": "gurukul",
+                "role": "student",
+                "goal": "learning"
+            }
+        }
+    }
+    
+    try:
+        response = requests.post(url, json=payload)
+        print(f"Status Code: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            print("Response:")
+            print(json.dumps(data, indent=2))
+            return True
+        else:
+            print(f"Error: {response.text}")
+            return False
+    except Exception as e:
+        print(f"Exception: {e}")
+        return False
+
+def test_get_agami_prediction():
+    """Test the GET /agami/user/{user_id} endpoint"""
+    print("\nTesting GET /agami/user/{user_id} endpoint...")
+    
+    # Test with a sample user ID
+    user_id = "test_user_001"
+    url = f"{BASE_URL}/agami/user/{user_id}"
+    
+    try:
+        response = requests.get(url)
+        print(f"Status Code: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            print("Response:")
+            print(json.dumps(data, indent=2))
+            return True
+        else:
+            print(f"Error: {response.text}")
+            return False
+    except Exception as e:
+        print(f"Exception: {e}")
+        return False
+
 if __name__ == "__main__":
     print("Running Karma Tracker API Tests")
     print("=" * 40)
@@ -128,7 +238,11 @@ if __name__ == "__main__":
             test_get_karma_profile,
             test_log_action,
             test_submit_atonement,
-            test_invalid_user
+            test_invalid_user,
+            test_rnanubandhan_network,
+            test_create_rnanubandhan_debt,
+            test_agami_prediction,
+            test_get_agami_prediction
         ]
         
         results = []
