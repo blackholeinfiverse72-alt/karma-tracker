@@ -106,7 +106,6 @@ $RECYCLE.BIN/
 
 # Data files
 data/vedic_corpus/
-data/karma_actions_dataset.json
 
 # Documentation builds
 docs/_build/
