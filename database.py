@@ -4,6 +4,7 @@ from config import MONGO_URI, DB_NAME
 # Lazy initialization - connections created on first use
 _client = None
 _db = None
+_collections = {}
 
 def get_client():
     """Get MongoDB client, initializing if needed"""
@@ -22,27 +23,31 @@ def get_db():
         _db = client[DB_NAME]
     return _db
 
-# Initialize collections only when first accessed
-def _init_collections():
-    db = get_db()
-    global users_col, transactions_col, qtable_col, appeals_col
-    global atonements_col, death_events_col, karma_events_col, rnanubandhan_col
-    
-    users_col = db["users"]
-    transactions_col = db["transactions"]
-    qtable_col = db["q_table"]
-    appeals_col = db["appeals"]
-    atonements_col = db["atonements"]
-    death_events_col = db["death_events"]
-    karma_events_col = db["karma_events"]
-    rnanubandhan_col = db["rnanubandhan_relationships"]
+def get_collection(collection_name):
+    """Get a collection, initializing if needed"""
+    if collection_name not in _collections:
+        _collections[collection_name] = get_db()[collection_name]
+    return _collections[collection_name]
 
-# Collections will be None until first use
-users_col = None
-transactions_col = None
-qtable_col = None
-appeals_col = None
-atonements_col = None
-death_events_col = None
-karma_events_col = None
-rnanubandhan_col = None
+# Collection accessors using lazy getter pattern
+class _LazyCollection:
+    def __init__(self, name):
+        self.name = name
+    
+    def __getattr__(self, attr):
+        # Delegate all method calls to the actual collection
+        return getattr(get_collection(self.name), attr)
+    
+    def __call__(self, *args, **kwargs):
+        # Support callable usage
+        return get_collection(self.name)(*args, **kwargs)
+
+# Create lazy collection proxies
+users_col = _LazyCollection("users")
+transactions_col = _LazyCollection("transactions")
+qtable_col = _LazyCollection("q_table")
+appeals_col = _LazyCollection("appeals")
+atonements_col = _LazyCollection("atonements")
+death_events_col = _LazyCollection("death_events")
+karma_events_col = _LazyCollection("karma_events")
+rnanubandhan_col = _LazyCollection("rnanubandhan_relationships")
