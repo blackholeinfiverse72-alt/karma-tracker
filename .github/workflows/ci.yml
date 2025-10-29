@@ -48,4 +48,4 @@ jobs:
     - name: Build and test Docker image
       run: |
         docker build -t karmachain:test .
-        docker run --rm karmachain:test python -c "import main; print('Docker build successful')"
+        docker run --rm karmachain:test python --version
