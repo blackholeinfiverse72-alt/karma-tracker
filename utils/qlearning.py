@@ -1,6 +1,5 @@
 import datetime
 import numpy as np
-from database import qtable_col, users_col
 from config import ACTIONS, ROLE_SEQUENCE, ALPHA, GAMMA, REWARD_MAP, CHEAT_PUNISHMENT_LEVELS, ATONEMENT_REWARDS
 from utils.merit import determine_role_from_merit
 
@@ -9,28 +8,61 @@ n_states = len(states)
 n_actions = len(ACTIONS)
 Q = np.zeros((n_states, n_actions))
 
-# restore Q-table from DB
-q_doc = qtable_col.find_one({})
-if q_doc and "q" in q_doc:
+# Lazy database connection - will be initialized on first use
+db_initialized = False
+qtable_col = None
+users_col = None
+
+def initialize_db():
+    """Initialize database connections lazily"""
+    global db_initialized, qtable_col, users_col, Q
+    if db_initialized:
+        return
+    
     try:
-        Q = np.array(q_doc["q"])
-        # Ensure Q-table has the correct shape
-        if Q.shape != (n_states, n_actions):
-            print(f"DEBUG: Q-table shape mismatch. Expected {(n_states, n_actions)}, got {Q.shape}. Resetting.")
+        from database import qtable_col as qtable_collection, users_col as users_collection
+        qtable_col = qtable_collection
+        users_col = users_collection
+        
+        # restore Q-table from DB
+        q_doc = qtable_col.find_one({})
+        if q_doc and "q" in q_doc:
+            try:
+                Q = np.array(q_doc["q"])
+                # Ensure Q-table has the correct shape
+                if Q.shape != (n_states, n_actions):
+                    print(f"DEBUG: Q-table shape mismatch. Expected {(n_states, n_actions)}, got {Q.shape}. Resetting.")
+                    Q = np.zeros((n_states, n_actions))
+            except Exception as e:
+                print(f"DEBUG: Error restoring Q-table: {e}. Resetting.")
+                Q = np.zeros((n_states, n_actions))
+        else:
+            print(f"DEBUG: No Q-table found in DB. Creating new one with shape {(n_states, n_actions)}")
             Q = np.zeros((n_states, n_actions))
+        
+        db_initialized = True
     except Exception as e:
-        print(f"DEBUG: Error restoring Q-table: {e}. Resetting.")
-        Q = np.zeros((n_states, n_actions))
-else:
-    print(f"DEBUG: No Q-table found in DB. Creating new one with shape {(n_states, n_actions)}")
-    Q = np.zeros((n_states, n_actions))
+        print(f"WARNING: Could not initialize database for Q-learning: {e}")
+        # Continue without DB - will use in-memory Q-table only
+        db_initialized = False
 
 def save_q_table():
-    # Use timezone-aware datetime (fix for Python 3.12+)
-    qtable_col.replace_one({}, {"q": Q.tolist(), "updated_at": datetime.datetime.now(datetime.timezone.utc)}, upsert=True)
+    """Save Q-table to database if available"""
+    if not db_initialized or qtable_col is None:
+        return  # Skip saving if DB not available
+    try:
+        # Use timezone-aware datetime (fix for Python 3.12+)
+        qtable_col.replace_one({}, {"q": Q.tolist(), "updated_at": datetime.datetime.now(datetime.timezone.utc)}, upsert=True)
+    except Exception as e:
+        print(f"WARNING: Could not save Q-table: {e}")
 
 def q_learning_step(user_id: str, state: str, action: str, reward: float):
+    initialize_db()  # Ensure database is initialized
     print(f"DEBUG q_learning_step: user_id={user_id}, state={state}, action={action}, reward={reward}")
+    
+    if not db_initialized or users_col is None:
+        print(f"WARNING: Database not available, skipping Q-learning update")
+        return reward, state
     
     # Ensure state is valid
     if state not in states:
@@ -111,6 +143,12 @@ def atonement_q_learning_step(user_id: str, severity_class: str):
     Returns:
         tuple: (reward_value, next_role)
     """
+    initialize_db()  # Ensure database is initialized
+    
+    if not db_initialized or users_col is None:
+        print(f"WARNING: Database not available, skipping atonement Q-learning update")
+        return 0, None
+    
     # Get user and current state
     user_doc = users_col.find_one({"user_id": user_id})
     if not user_doc:

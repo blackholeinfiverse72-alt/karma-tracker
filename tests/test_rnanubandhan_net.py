@@ -222,9 +222,12 @@ def test_get_relationship_patterns():
         
         # Check specific values
         assert patterns["user_id"] == "test_user_001"
-        assert patterns["total_debt"] == 35.0
+        assert patterns["total_debt"] == 35.0  # 25 + 10
         assert patterns["total_credit"] == 15.0
-        assert patterns["relationship_count"] == 2  # One debt, one credit
+        # test_user_001 has 2 debts (to user_002: 25, to user_003: 10) 
+        # and 1 credit (from user_002: 15)
+        # Total relationships = 2 debts + 1 credit = 3
+        assert patterns["relationship_count"] == 3
         
         print("✓ Get Relationship Patterns test passed")
         return True
