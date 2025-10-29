@@ -10,13 +10,13 @@ from routes.agami import router as agami_router  # Agami Karma API router
 app = FastAPI(
     title="KarmaChain v2 (Dual-Ledger)",
     description="A modular, portable karma tracking system for multi-department integration",
-    version="1.0.1"
+    version="1.0.0"
 )
 
 # Health check endpoint
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "version": "1.0.1"}
+    return {"status": "healthy"}
 
 # Configure CORS for cross-domain requests
 app.add_middleware(
