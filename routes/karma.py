@@ -17,6 +17,7 @@ from validation_middleware import validation_dependency, validation_middleware
 from config import TOKEN_ATTRIBUTES, ACTIONS, REWARD_MAP, INTENT_MAP, ATONEMENT_REWARDS
 import logging
 
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ async def get_karma_profile(user_id: str, _: bool = Depends(validation_dependenc
     Returns:
         KarmaProfileResponse: Complete karma profile including balances, scores, and guidance
     """
+    event_id = None
     try:
         # Log the request
         event_id = str(uuid.uuid4())
@@ -116,18 +118,22 @@ async def get_karma_profile(user_id: str, _: bool = Depends(validation_dependenc
         net_karma = calculate_net_karma(user)  # This returns a float
         weighted_karma_score = calculate_weighted_karma_score(user)
         
-        # Get action statistics
-        total_actions = transactions_col.count_documents({"user_id": user_id})
-        pending_atonements = transactions_col.count_documents({
-            "user_id": user_id, 
-            "type": "atonement",
-            "status": "pending"
-        })
-        completed_atonements = transactions_col.count_documents({
-            "user_id": user_id, 
-            "type": "atonement",
-            "status": "completed"
-        })
+        # Get action statistics via single aggregation
+        stats = list(transactions_col.aggregate([
+            {"$match": {"user_id": user_id}},
+            {"$group": {
+                "_id": None,
+                "total_actions": {"$sum": 1},
+                "completed_atonements": {"$sum": {"$cond": [{"$eq": ["$action", "atonement_completed"]}, 1, 0]}}
+            }}
+        ]))
+        if stats:
+            total_actions = stats[0].get("total_actions", 0)
+            completed_atonements = stats[0].get("completed_atonements", 0)
+        else:
+            total_actions = 0
+            completed_atonements = 0
+        pending_atonements = 0
         
         # Get corrective guidance
         corrective_guidance = determine_corrective_guidance(user)
@@ -177,21 +183,36 @@ async def get_karma_profile(user_id: str, _: bool = Depends(validation_dependenc
             last_updated=datetime.utcnow()
         )
         
-    except Exception as e:
+    except HTTPException as e:
         # Log error
-        if 'event_id' in locals():
+        if event_id:
             karma_events_col.update_one(
                 {"event_id": event_id},
                 {
                     "$set": {
                         "status": "failed",
-                        "error_message": str(e),
+                        "error_message": e.detail if hasattr(e, 'detail') else str(e),
                         "updated_at": datetime.utcnow()
                     }
                 }
             )
-        logger.error(f"Error getting karma profile for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.warning(f"Request error getting karma profile for user {user_id}: {e.detail if hasattr(e, 'detail') else str(e)}")
+        raise e
+    except Exception as e:
+        msg = f"Database error: {str(e)}" if 'pymongo' in type(e).__module__ else f"Internal server error: {str(e)}"
+        if event_id:
+            karma_events_col.update_one(
+                {"event_id": event_id},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "error_message": msg,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+        logger.error(f"{'Database error' if 'pymongo' in type(e).__module__ else 'Error'} getting karma profile for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=msg)
 
 @router.post("/log-action/", response_model=LogActionResponse)
 async def log_action(req: LogActionRequest, _: bool = Depends(validation_dependency)):
@@ -204,6 +225,7 @@ async def log_action(req: LogActionRequest, _: bool = Depends(validation_depende
     Returns:
         LogActionResponse: Action processing results
     """
+    event_id = None
     try:
         # Log the request
         event_id = str(uuid.uuid4())
@@ -219,13 +241,13 @@ async def log_action(req: LogActionRequest, _: bool = Depends(validation_depende
         # Ensure user exists
         user = users_col.find_one({"user_id": req.user_id})
         if not user:
-            user = create_user_if_missing(req.user_id, req.role)
+            user = create_user_if_missing(req.user_id, req.role or "learner")
         
         # Apply decay/expiry
         user = apply_decay_and_expiry(user)
         
         # Evaluate karmic impact using the karma engine
-        karma_evaluation = evaluate_action_karma(user, req.action, req.intensity)
+        karma_evaluation = evaluate_action_karma(user, req.action, req.intensity or 1.0)
         
         # Get Q-learning reward
         reward_value = 0
@@ -233,7 +255,7 @@ async def log_action(req: LogActionRequest, _: bool = Depends(validation_depende
         
         if req.action in REWARD_MAP:
             reward_info = REWARD_MAP[req.action]
-            base_reward = reward_info["value"] * req.intensity
+            base_reward = reward_info["value"] * (req.intensity or 1.0)
             
             # Apply Q-learning step
             reward_value, predicted_next_role = q_learning_step(
@@ -251,8 +273,9 @@ async def log_action(req: LogActionRequest, _: bool = Depends(validation_depende
                 {"$inc": {f"balances.{token}": reward_value}}
             )
             
-            # Update user reference
-            user = users_col.find_one({"user_id": req.user_id})
+            # Update local user balances to avoid an extra read
+            user.setdefault("balances", {})
+            user["balances"][token] = user["balances"].get(token, 0) + reward_value
         
         # Handle Paap generation if applicable
         paap_generated = False
@@ -275,7 +298,7 @@ async def log_action(req: LogActionRequest, _: bool = Depends(validation_depende
         _update_advanced_karma_types(req.user_id, karma_evaluation)
         
         # Recompute merit & role
-        user_after = users_col.find_one({"user_id": req.user_id})
+        user_after = user
         merit_score = compute_user_merit_score(user_after)
         new_role = determine_role_from_merit(merit_score)
         users_col.update_one({"user_id": req.user_id}, {"$set": {"role": new_role}})
@@ -344,21 +367,36 @@ async def log_action(req: LogActionRequest, _: bool = Depends(validation_depende
             transaction_id=transaction_id
         )
         
-    except Exception as e:
+    except HTTPException as e:
         # Log error
-        if 'event_id' in locals():
+        if event_id:
             karma_events_col.update_one(
                 {"event_id": event_id},
                 {
                     "$set": {
                         "status": "failed",
-                        "error_message": str(e),
+                        "error_message": e.detail if hasattr(e, 'detail') else str(e),
                         "updated_at": datetime.utcnow()
                     }
                 }
             )
-        logger.error(f"Error logging action for user {req.user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.warning(f"Request error logging action for user {req.user_id}: {e.detail if hasattr(e, 'detail') else str(e)}")
+        raise e
+    except Exception as e:
+        msg = f"Database error: {str(e)}" if 'pymongo' in type(e).__module__ else f"Internal server error: {str(e)}"
+        if event_id:
+            karma_events_col.update_one(
+                {"event_id": event_id},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "error_message": msg,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+        logger.error(f"{'Database error' if 'pymongo' in type(e).__module__ else 'Error'} logging action for user {req.user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=msg)
 
 @router.post("/submit-atonement/", response_model=AtonementSubmissionResponse)
 async def submit_atonement(req: AtonementSubmissionRequest, _: bool = Depends(validation_dependency)):
@@ -371,6 +409,7 @@ async def submit_atonement(req: AtonementSubmissionRequest, _: bool = Depends(va
     Returns:
         AtonementSubmissionResponse: Atonement processing results
     """
+    event_id = None
     try:
         # Log the request
         event_id = str(uuid.uuid4())
@@ -404,7 +443,11 @@ async def submit_atonement(req: AtonementSubmissionRequest, _: bool = Depends(va
         user = apply_decay_and_expiry(user)
         
         # Get the severity class from the atonement plan
-        severity_class = updated_plan.get("severity_class", "minor")
+        severity_class = "minor"
+        if isinstance(updated_plan, dict):
+            sc = updated_plan.get("severity_class")
+            if isinstance(sc, str):
+                severity_class = sc
         
         # Apply Q-learning update for atonement completion
         reward_value, next_role = atonement_q_learning_step(req.user_id, severity_class)
@@ -489,21 +532,36 @@ async def submit_atonement(req: AtonementSubmissionRequest, _: bool = Depends(va
             transaction_id=transaction_id
         )
         
-    except Exception as e:
+    except HTTPException as e:
         # Log error
-        if 'event_id' in locals():
+        if event_id:
             karma_events_col.update_one(
                 {"event_id": event_id},
                 {
                     "$set": {
                         "status": "failed",
-                        "error_message": str(e),
+                        "error_message": e.detail if hasattr(e, 'detail') else str(e),
                         "updated_at": datetime.utcnow()
                     }
                 }
             )
-        logger.error(f"Error submitting atonement for user {req.user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.warning(f"Request error submitting atonement for user {req.user_id}: {e.detail if hasattr(e, 'detail') else str(e)}")
+        raise e
+    except Exception as e:
+        msg = f"Database error: {str(e)}" if 'pymongo' in type(e).__module__ else f"Internal server error: {str(e)}"
+        if event_id:
+            karma_events_col.update_one(
+                {"event_id": event_id},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "error_message": msg,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+        logger.error(f"{'Database error' if 'pymongo' in type(e).__module__ else 'Error'} submitting atonement for user {req.user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=msg)
 
 def _update_advanced_karma_types(user_id: str, karma_evaluation: Dict[str, Any]):
     """

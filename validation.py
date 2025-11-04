@@ -7,7 +7,9 @@ from pydantic import BaseModel, validator, Field
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import re
+import html
 from enum import Enum
+from config import ACTIONS
 
 # Validation constants
 MAX_USER_ID_LENGTH = 50
@@ -39,21 +41,12 @@ class EventType(str, Enum):
 # Roles (must match config.py)
 class UserRole(str, Enum):
     LEARNER = "learner"
-    TEACHER = "teacher"
-    SEEKER = "seeker"
-    GUIDE = "guide"
-    MENTOR = "mentor"
     VOLUNTEER = "volunteer"
+    SEVA = "seva"
+    GURU = "guru"
 
 # Action types (validated against known actions)
-ALLOWED_ACTIONS = {
-    # Positive actions
-    "help_elderly", "donate_food", "teach_dharma", "meditate_daily", "mentor_student",
-    "resolve_conflict", "volunteer", "practice_kindness", "study_scriptures", "serve_community",
-    # Negative actions
-    "disrespect_teacher", "cheat_exam", "break_promise", "ignore_need", "speak_harshly",
-    "cause_harm", "deceive_others", "waste_resources", "indulge_excess", "neglect_duty"
-}
+ALLOWED_ACTIONS = set(ACTIONS)
 
 class ValidatedLogActionRequest(BaseModel):
     """Enhanced LogActionRequest with comprehensive validation"""
@@ -246,18 +239,14 @@ def sanitize_input(text: str) -> str:
     if not text:
         return text
     
-    # Remove potentially dangerous characters
-    dangerous_chars = ['<', '>', '"', "'", '&', '%', '$', '#', '@', '!']
-    sanitized = text
-    
-    for char in dangerous_chars:
-        sanitized = sanitized.replace(char, '')
+    # Escape HTML special characters to neutralize tags and quotes
+    escaped = html.escape(text.strip(), quote=True)
     
     # Limit length
-    if len(sanitized) > 1000:
-        sanitized = sanitized[:1000]
+    if len(escaped) > 1000:
+        escaped = escaped[:1000]
     
-    return sanitized.strip()
+    return escaped
 
 def validate_karma_action(action: str, severity: str, description: str) -> tuple[bool, Optional[str]]:
     """

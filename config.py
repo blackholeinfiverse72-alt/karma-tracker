@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGO_URI = os.getenv("MONGO_URI")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "karma-chain")
 
 ROLE_SEQUENCE = ["learner", "volunteer", "seva", "guru"]
@@ -125,3 +125,34 @@ LEVEL_THRESHOLDS = {
 ALPHA = float(os.getenv("ALPHA", "0.15"))
 GAMMA = float(os.getenv("GAMMA", "0.9"))
 EPSILON = float(os.getenv("EPSILON", "0.2"))
+
+# Configurable karma factors and guidance weights
+KARMA_FACTORS = {
+    "purushartha_modifiers": {
+        "Dharma": 1.2,
+        "Artha": 1.0,
+        "Kama": 0.8,
+        "Moksha": 1.5
+    },
+    "positive_distribution": {
+        "sanchita": 0.5,
+        "prarabdha": 0.3,
+        "dridha": 0.6,
+        "adridha": 0.4
+    },
+    "negative_distribution": {
+        "adridha": 0.7
+    },
+    "net_weights": {
+        "dridha": 0.8,
+        "adridha": 0.3
+    }
+}
+
+CORRECTIVE_GUIDANCE_WEIGHTS = {
+    "Seva": 1.2,
+    "Meditation": 1.3,
+    "Daan": 1.1,
+    "Tap": 1.4,
+    "Bhakti": 1.25
+}

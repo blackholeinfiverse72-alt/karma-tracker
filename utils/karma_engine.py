@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Dict, List, Tuple, Any
 from database import users_col
-from config import TOKEN_ATTRIBUTES, ACTIONS, REWARD_MAP
+from config import TOKEN_ATTRIBUTES, ACTIONS, REWARD_MAP, KARMA_FACTORS, CORRECTIVE_GUIDANCE_WEIGHTS
 from utils.karma_schema import calculate_weighted_karma_score, get_karma_weights
 from utils.paap import classify_paap_action, calculate_paap_value
 from utils.merit import determine_role_from_merit
@@ -11,25 +11,25 @@ from utils.karmic_predictor import analyze_dridha_adridha_influence, get_rnanuba
 PURUSHARTHA = {
     "Dharma": {
         "description": "Righteousness, duty, and moral virtue",
-        "modifier": 1.2,
+        "modifier": KARMA_FACTORS["purushartha_modifiers"]["Dharma"],
         "positive_actions": ["completing_lessons", "helping_peers", "solving_doubts"],
         "negative_actions": ["cheat", "disrespect_guru", "break_promise", "false_speech"]
     },
     "Artha": {
         "description": "Wealth, prosperity, and economic values",
-        "modifier": 1.0,
+        "modifier": KARMA_FACTORS["purushartha_modifiers"]["Artha"],
         "positive_actions": ["selfless_service"],
         "negative_actions": ["theft", "violence"]
     },
     "Kama": {
         "description": "Desire, pleasure, and emotional fulfillment",
-        "modifier": 0.8,
+        "modifier": KARMA_FACTORS["purushartha_modifiers"]["Kama"],
         "positive_actions": ["helping_peers", "solving_doubts"],
         "negative_actions": ["harm_others", "violence"]
     },
     "Moksha": {
         "description": "Liberation, spiritual freedom, and enlightenment",
-        "modifier": 1.5,
+        "modifier": KARMA_FACTORS["purushartha_modifiers"]["Moksha"],
         "positive_actions": ["selfless_service", "completing_lessons"],
         "negative_actions": ["cheat", "disrespect_guru"]
     }
@@ -39,27 +39,27 @@ PURUSHARTHA = {
 CORRECTIVE_GUIDANCE = {
     "Seva": {
         "description": "Selfless service to others",
-        "weight": 1.2,
+        "weight": CORRECTIVE_GUIDANCE_WEIGHTS["Seva"],
         "when_to_recommend": ["low_dharma", "high_paap"]
     },
     "Meditation": {
         "description": "Mindfulness and spiritual practice",
-        "weight": 1.3,
+        "weight": CORRECTIVE_GUIDANCE_WEIGHTS["Meditation"],
         "when_to_recommend": ["high_stress", "kama_imbalance"]
     },
     "Daan": {
         "description": "Charitable giving and donations",
-        "weight": 1.1,
+        "weight": CORRECTIVE_GUIDANCE_WEIGHTS["Daan"],
         "when_to_recommend": ["artha_imbalance", "low_dharma"]
     },
     "Tap": {
         "description": "Austerities and self-discipline practices",
-        "weight": 1.4,
+        "weight": CORRECTIVE_GUIDANCE_WEIGHTS["Tap"],
         "when_to_recommend": ["high_paap", "kama_excess"]
     },
     "Bhakti": {
         "description": "Devotional practices and service",
-        "weight": 1.25,
+        "weight": CORRECTIVE_GUIDANCE_WEIGHTS["Bhakti"],
         "when_to_recommend": ["spiritual_growth", "moksha_seek"]
     }
 }
@@ -116,7 +116,7 @@ def evaluate_action_karma(user_doc: Dict, action: str, intensity: float = 1.0) -
                 result["rnanubandhan_change"] = paap_value * 1.0
             
         # Apply to AdridhaKarma (volatile karma)
-        result["adridha_influence"] = -paap_value * 0.7
+        result["adridha_influence"] = -paap_value * KARMA_FACTORS["negative_distribution"]["adridha"]
     else:
         # Positive action
         if action in REWARD_MAP:
@@ -124,19 +124,18 @@ def evaluate_action_karma(user_doc: Dict, action: str, intensity: float = 1.0) -
             positive_value = reward_info["value"] * intensity
             result["positive_impact"] = positive_value
             
-            # Apply to SanchitaKarma (accumulated karma)
-            result["sanchita_change"] = positive_value * 0.5
+            result["sanchita_change"] = positive_value * KARMA_FACTORS["positive_distribution"]["sanchita"]
             
             # Apply to PrarabdhaKarma (current life karma)
-            result["prarabdha_change"] = positive_value * 0.3
+            result["prarabdha_change"] = positive_value * KARMA_FACTORS["positive_distribution"]["prarabdha"]
             
             # Apply to DridhaKarma (stable karma) or AdridhaKarma based on action type
             if action in ["completing_lessons", "selfless_service"]:
                 # More stable actions contribute to DridhaKarma
-                result["dridha_influence"] = positive_value * 0.6
+                result["dridha_influence"] = positive_value * KARMA_FACTORS["positive_distribution"]["dridha"]
             else:
                 # Less stable actions contribute to AdridhaKarma
-                result["adridha_influence"] = positive_value * 0.4
+                result["adridha_influence"] = positive_value * KARMA_FACTORS["positive_distribution"]["adridha"]
         else:
             # Default positive action
             positive_value = 5.0 * intensity
@@ -263,24 +262,50 @@ def calculate_net_karma(user_doc: Dict) -> Dict[str, Any]:
     prarabdha_karma = balances.get("PrarabdhaKarma", 0)
     
     # Calculate Rnanubandhan total
-    rnanubandhan_total = 0
-    if "Rnanubandhan" in balances:
+    rnanubandhan_total = 0.0
+    if isinstance(balances, dict) and "Rnanubandhan" in balances:
         rnanubandhan = balances["Rnanubandhan"]
-        # Check if Rnanubandhan is a dictionary (expected structure) or a float (legacy data)
+        # Support dict (severity levels), list-based entries, and legacy numeric values
         if isinstance(rnanubandhan, dict):
-            # New structure with severity levels
-            for severity in rnanubandhan:
-                if severity in TOKEN_ATTRIBUTES["Rnanubandhan"]:
-                    multiplier = TOKEN_ATTRIBUTES["Rnanubandhan"][severity]["multiplier"]
-                    rnanubandhan_total += rnanubandhan[severity] * multiplier
+            for severity, amount in rnanubandhan.items():
+                # Safely convert amount to float magnitude; skip non-numeric values
+                try:
+                    amount_val = abs(float(amount))
+                except (TypeError, ValueError):
+                    continue
+                # Use configured multiplier if present; fallback to 'major'
+                mult = TOKEN_ATTRIBUTES.get("Rnanubandhan", {}).get(severity, TOKEN_ATTRIBUTES["Rnanubandhan"]["major"]).get("multiplier", 1.0)
+                rnanubandhan_total += amount_val * mult
+        elif isinstance(rnanubandhan, list):
+            for entry in rnanubandhan:
+                if isinstance(entry, dict):
+                    severity = entry.get("severity", "major")
+                    amount = entry.get("amount", 0)
+                    try:
+                        amount_val = abs(float(amount))
+                    except (TypeError, ValueError):
+                        continue
+                    mult = TOKEN_ATTRIBUTES.get("Rnanubandhan", {}).get(severity, TOKEN_ATTRIBUTES["Rnanubandhan"]["major"]).get("multiplier", 1.0)
+                    rnanubandhan_total += amount_val * mult
+                else:
+                    # Interpret bare numeric values in list as legacy amounts
+                    try:
+                        amount_val = abs(float(entry))
+                        mult = TOKEN_ATTRIBUTES["Rnanubandhan"]["major"]["multiplier"]
+                        rnanubandhan_total += amount_val * mult
+                    except (TypeError, ValueError):
+                        continue
         else:
-            # Legacy structure where Rnanubandhan is a single float value
-            # Use the major severity multiplier as default
-            multiplier = TOKEN_ATTRIBUTES["Rnanubandhan"]["major"]["multiplier"]
-            rnanubandhan_total = rnanubandhan * multiplier
+            # Legacy scalar value
+            try:
+                amount_val = abs(float(rnanubandhan))
+                mult = TOKEN_ATTRIBUTES["Rnanubandhan"]["major"]["multiplier"]
+                rnanubandhan_total = amount_val * mult
+            except (TypeError, ValueError):
+                rnanubandhan_total = 0.0
 
     # Calculate net karma
-    net_karma = positive_karma - negative_karma + dridha_karma * 0.8 + adridha_karma * 0.3 + sanchita_karma + prarabdha_karma - rnanubandhan_total
+    net_karma = positive_karma - negative_karma + dridha_karma * KARMA_FACTORS["net_weights"]["dridha"] + adridha_karma * KARMA_FACTORS["net_weights"]["adridha"] + sanchita_karma + prarabdha_karma - rnanubandhan_total
     
     return {
         "net_karma": net_karma,
@@ -425,7 +450,12 @@ def integrate_with_q_learning(user_doc: Dict, action: str, reward: float) -> Tup
     karma_evaluation = evaluate_action_karma(user_doc, action)
     
     # Adjust reward based on karmic evaluation
-    karmic_factor = karma_evaluation["net_karma"] / 100.0  # Normalize the factor
+    net_val = 0.0
+    try:
+        net_val = float(karma_evaluation.get("net_karma", 0.0))
+    except (TypeError, ValueError):
+        net_val = 0.0
+    karmic_factor = (net_val / 100.0) if net_val != 0 else 0.0  # Normalize safely to avoid division-by-zero
     adjusted_reward = reward * (1 + karmic_factor)
     
     # Calculate new merit based on updated balances

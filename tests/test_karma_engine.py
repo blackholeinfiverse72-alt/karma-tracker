@@ -102,6 +102,58 @@ def test_purushartha_alignment():
         assert category in alignment
         assert isinstance(alignment[category], (int, float))
 
+# New edge-case tests for robust coverage
+
+def test_rnanubandhan_legacy_scalar():
+    """Rnanubandhan as a legacy scalar should be handled without errors"""
+    user = dict(test_user)
+    user["balances"] = dict(test_user["balances"])  # shallow copy
+    user["balances"]["Rnanubandhan"] = 12.5  # legacy numeric
+    result = calculate_net_karma(user)
+    assert isinstance(result["net_karma"], (int, float))
+
+
+def test_rnanubandhan_dict_invalid_values():
+    """Invalid values in Rnanubandhan dict should be skipped safely"""
+    user = dict(test_user)
+    user["balances"] = dict(test_user["balances"])  # shallow copy
+    user["balances"]["Rnanubandhan"] = {"minor": "not_a_number", "major": 10}
+    result = calculate_net_karma(user)
+    assert isinstance(result["net_karma"], (int, float))
+
+
+def test_rnanubandhan_list_entries():
+    """List-based Rnanubandhan entries should be supported (dict and numeric)"""
+    user = dict(test_user)
+    user["balances"] = dict(test_user["balances"])  # shallow copy
+    user["balances"]["Rnanubandhan"] = [
+        {"severity": "medium", "amount": 7},
+        3.5,
+        {"severity": "unknown", "amount": 2}  # falls back to major multiplier
+    ]
+    result = calculate_net_karma(user)
+    assert isinstance(result["net_karma"], (int, float))
+
+
+def test_integrate_with_q_learning_zero_net():
+    """Integration should not divide by zero when net_karma is zero"""
+    user = dict(test_user)
+    # Force a balanced state to approximate net_karma ~ 0
+    user["balances"] = {
+        "DharmaPoints": 0,
+        "SevaPoints": 0,
+        "PunyaTokens": 0,
+        "PaapTokens": {"minor": 0, "medium": 0, "maha": 0},
+        "DridhaKarma": 0,
+        "AdridhaKarma": 0,
+        "SanchitaKarma": 0,
+        "PrarabdhaKarma": 0,
+        "Rnanubandhan": 0
+    }
+    adjusted_reward, next_role = integrate_with_q_learning(user, "completing_lessons", 10.0)
+    assert isinstance(adjusted_reward, (int, float))
+    assert isinstance(next_role, str)
+
 def test_edge_cases():
     """Test edge cases"""
     # Test with unknown action

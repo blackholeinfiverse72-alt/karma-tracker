@@ -155,16 +155,41 @@ def calculate_weighted_karma_score(user_doc):
     # Calculate score for Rnanubandhan
     if "Rnanubandhan" in user_doc["balances"]:
         rnanubandhan = user_doc["balances"]["Rnanubandhan"]
-        # Check if Rnanubandhan is a dictionary (expected structure) or a float (legacy data)
+        # Dict structure with severity levels
         if isinstance(rnanubandhan, dict):
-            # New structure with severity levels
             for severity, amount in rnanubandhan.items():
-                multiplier = weights['Rnanubandhan'].get(severity, 1.0)
-                total_score += amount * multiplier
+                try:
+                    amount_val = float(amount)
+                except (TypeError, ValueError):
+                    continue
+                multiplier = weights.get('Rnanubandhan', {}).get(severity, 1.0)
+                total_score += amount_val * multiplier
+        # List structure supporting dict and numeric entries
+        elif isinstance(rnanubandhan, list):
+            for entry in rnanubandhan:
+                if isinstance(entry, dict):
+                    severity = entry.get("severity", "major")
+                    amount = entry.get("amount", 0)
+                    try:
+                        amount_val = float(amount)
+                    except (TypeError, ValueError):
+                        continue
+                    multiplier = weights.get('Rnanubandhan', {}).get(severity, weights.get('Rnanubandhan', {}).get('major', 1.0))
+                    total_score += amount_val * multiplier
+                else:
+                    try:
+                        amount_val = float(entry)
+                        multiplier = weights.get('Rnanubandhan', {}).get('major', 1.0)
+                        total_score += amount_val * multiplier
+                    except (TypeError, ValueError):
+                        continue
         else:
-            # Legacy structure where Rnanubandhan is a single float value
-            # Treat it as a base value with default weight
-            weight = weights.get('Rnanubandhan', {}).get('major', 4.0)  # Use major severity weight as default
-            total_score += rnanubandhan * weight
+            # Legacy scalar value
+            try:
+                amount_val = float(rnanubandhan)
+                multiplier = weights.get('Rnanubandhan', {}).get('major', 4.0)
+                total_score += amount_val * multiplier
+            except (TypeError, ValueError):
+                pass
             
     return total_score
