@@ -7,6 +7,7 @@ import uuid
 # Import database and models
 from database import karma_events_col
 from models import KarmaEvent
+from validation import sanitize_input, ALLOWED_FILE_TYPES
 
 # Import internal route handlers
 from routes.v1.karma.log_action import log_action, LogActionRequest
@@ -58,7 +59,7 @@ async def unified_event_endpoint(request: UnifiedEventRequest):
         event_id=event_id,
         event_type=request.type,
         data=request.data,
-        timestamp=request.timestamp,
+        timestamp=request.timestamp or datetime.utcnow(),
         source=request.source,
         status="pending",
         created_at=datetime.utcnow()
@@ -139,7 +140,7 @@ async def _handle_life_event(request: UnifiedEventRequest, event_id: str) -> Uni
             event_type="life_event",
             message="Life event logged successfully",
             data=result,
-            timestamp=request.timestamp,
+            timestamp=request.timestamp or datetime.utcnow(),
             routing_info={
                 "internal_endpoint": "/v1/karma/log-action/",
                 "mapped_from": "life_event"
@@ -178,7 +179,7 @@ async def _handle_atonement(request: UnifiedEventRequest, event_id: str) -> Unif
             event_type="atonement",
             message="Atonement submitted successfully",
             data=result,
-            timestamp=request.timestamp,
+            timestamp=request.timestamp or datetime.utcnow(),
             routing_info={
                 "internal_endpoint": "/v1/karma/atonement/submit",
                 "mapped_from": "atonement"
@@ -212,7 +213,7 @@ async def _handle_appeal(request: UnifiedEventRequest, event_id: str) -> Unified
             event_type="appeal",
             message="Appeal submitted successfully",
             data=result,
-            timestamp=request.timestamp,
+            timestamp=request.timestamp or datetime.utcnow(),
             routing_info={
                 "internal_endpoint": "/v1/karma/appeal/",
                 "mapped_from": "appeal"
@@ -244,7 +245,7 @@ async def _handle_death_event(request: UnifiedEventRequest, event_id: str) -> Un
             event_type="death_event",
             message="Death event processed successfully",
             data=result,
-            timestamp=request.timestamp,
+            timestamp=request.timestamp or datetime.utcnow(),
             routing_info={
                 "internal_endpoint": "/v1/karma/death/event",
                 "mapped_from": "death_event"
@@ -271,7 +272,7 @@ async def _handle_stats_request(request: UnifiedEventRequest, event_id: str) -> 
             event_type="stats_request",
             message="User statistics retrieved successfully",
             data=result,
-            timestamp=request.timestamp,
+            timestamp=request.timestamp or datetime.utcnow(),
             routing_info={
                 "internal_endpoint": "/v1/karma/stats/{user_id}",
                 "mapped_from": "stats_request"
@@ -299,6 +300,15 @@ async def unified_event_with_file(
     Unified event gateway for file-based submissions.
     Currently supports atonement submissions with file uploads.
     """
+    # Sanitize text inputs
+    user_id = sanitize_input(user_id)
+    plan_id = sanitize_input(plan_id)
+    atonement_type = sanitize_input(atonement_type)
+    if proof_text:
+        proof_text = sanitize_input(proof_text)
+    if tx_hash:
+        tx_hash = sanitize_input(tx_hash)
+    
     event_id = str(uuid.uuid4())
     
     # Create database event record
@@ -312,7 +322,7 @@ async def unified_event_with_file(
             "amount": amount,
             "proof_text": proof_text,
             "tx_hash": tx_hash,
-            "has_file": True,
+            "has_file": bool(proof_file),
             "file_name": proof_file.filename if proof_file else None
         },
         timestamp=datetime.utcnow(),
@@ -328,6 +338,35 @@ async def unified_event_with_file(
             db_event.error_message = "Currently only 'atonement_with_file' is supported for file uploads"
             karma_events_col.insert_one(db_event.dict())
             raise HTTPException(status_code=400, detail="Currently only 'atonement_with_file' is supported for file uploads")
+        
+        # Validate file if provided
+        if proof_file:
+            filename = proof_file.filename or ""
+            ext = ("." + filename.split(".")[-1].lower()) if "." in filename else ""
+            allowed_content_types = {
+                'text/plain', 'application/pdf', 'image/jpeg', 'image/jpg', 
+                'image/png', 'image/gif', 'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            }
+            
+            if ext not in ALLOWED_FILE_TYPES:
+                raise HTTPException(status_code=400, detail="File type not allowed")
+            
+            content_type = proof_file.content_type or 'application/octet-stream'
+            if content_type not in allowed_content_types:
+                raise HTTPException(status_code=400, detail=f"Content type not allowed: {content_type}")
+            
+            content = await proof_file.read()
+            file_size = len(content)
+            if file_size > 1024 * 1024:  # 1MB limit
+                raise HTTPException(status_code=400, detail="File size exceeds 1MB limit")
+            
+            # Reset file pointer if possible
+            if hasattr(proof_file, 'file') and hasattr(proof_file.file, 'seek'):
+                try:
+                    proof_file.file.seek(0)
+                except Exception:
+                    pass
         
         # Call the file-based atonement endpoint
         result = await submit_atonement_with_file(

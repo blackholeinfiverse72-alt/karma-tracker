@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
 from utils.atonement import validate_atonement_proof, get_user_atonement_plans
+from validation import sanitize_input, ALLOWED_FILE_TYPES
+import os
 
 router = APIRouter()
 
@@ -50,17 +52,48 @@ async def submit_atonement_with_file(
     """
     Submit proof for completion of an atonement task with file upload.
     """
-    # Validate file size if provided (limit to 1MB)
+    # Sanitize text inputs
+    if proof_text:
+        proof_text = sanitize_input(proof_text)
+    if tx_hash:
+        tx_hash = sanitize_input(tx_hash)
+    
+    # Validate file if provided
     if proof_file:
-        file_size = 0
+        filename = proof_file.filename or ""
+        ext = ("." + filename.split(".")[-1].lower()) if "." in filename else ""
+        allowed_content_types = {
+            'text/plain', 'application/pdf', 'image/jpeg', 'image/jpg', 
+            'image/png', 'image/gif', 'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        }
+        
+        # Check extension
+        if ext not in ALLOWED_FILE_TYPES:
+            raise HTTPException(status_code=400, detail="File type not allowed")
+        
+        # Check content type
+        content_type = proof_file.content_type or 'application/octet-stream'
+        if content_type not in allowed_content_types:
+            raise HTTPException(status_code=400, detail=f"Content type not allowed: {content_type}")
+        
+        # Read and size check (limit to 1MB)
         content = await proof_file.read()
         file_size = len(content)
-        
-        if file_size > 1024 * 1024:  # 1MB limit
+        if file_size > 1024 * 1024:
             raise HTTPException(status_code=400, detail="File size exceeds 1MB limit")
         
-        # Store file reference or content hash instead of actual file
-        file_reference = f"{plan_id}_{datetime.now(timezone.utc).timestamp()}"
+        # Reset file pointer if possible
+        if hasattr(proof_file, 'file') and hasattr(proof_file.file, 'seek'):
+            try:
+                proof_file.file.seek(0)
+            except Exception:
+                pass
+        
+        # Store safe file reference (only basename, strip suspicious chars)
+        base_name = os.path.basename(filename)
+        safe_name = base_name.replace('..', '').replace('/', '').replace('\\', '')
+        file_reference = f"{plan_id}_{datetime.now(timezone.utc).timestamp()}_{safe_name}"
         proof_text = f"{proof_text or ''}\nFile reference: {file_reference}"
     
     # Validate the submission
