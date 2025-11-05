@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import database modules
-from database import db, rnanubandhan_col, users_col
+from database import get_db, get_client, rnanubandhan_col, users_col
 from utils.rnanubandhan import RnanubandhanManager
 from bson import ObjectId
 
@@ -20,7 +20,7 @@ def test_connection():
     print("Testing database connection...")
     try:
         # Test connection
-        client = db.client
+        client = get_client()
         client.admin.command('ping')
         print("✅ Database connection successful")
         return True
@@ -32,6 +32,7 @@ def test_collections():
     print("\nTesting collections...")
     try:
         # List collections
+        db = get_db()
         collections = db.list_collection_names()
         print(f"📚 Available collections: {collections}")
         

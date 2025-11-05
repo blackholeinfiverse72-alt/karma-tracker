@@ -7,14 +7,14 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__)))
 
-from database import db, rnanubandhan_col
+from database import get_db, get_client, rnanubandhan_col, users_col
 from utils.rnanubandhan import RnanubandhanManager
 
 def test_database_connection():
     """Test database connection"""
     try:
         # Test connection
-        client = db.client
+        client = get_client()
         client.admin.command('ping')
         print("✅ Database connection successful")
         return True
@@ -26,6 +26,7 @@ def test_collection_exists():
     """Test if Rnanubandhan collection exists"""
     try:
         # List collections
+        db = get_db()
         collections = db.list_collection_names()
         print(f"📚 Available collections: {collections}")
         
